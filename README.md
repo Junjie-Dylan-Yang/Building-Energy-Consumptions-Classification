@@ -1,4 +1,4 @@
-# Energy-Consumptions-Prediction
+# Energy Consumptions Prediction
 
 With the trending spirit of energy saving all over the world, commercial buildings especially skyscrapers in major cities are looking for possible solutions to reduce energy cost for heating and cooling. To encourage investing and understanding in these solutions, it is desirable to investigate energy consumption patterns.
 
