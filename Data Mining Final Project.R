@@ -56,7 +56,10 @@ building = building_meter %>%
 building$timestamp = as.character(building$timestamp)
 
 building = building%>%
-  mutate(hour = as.numeric(substring(building$timestamp,12,13)))%>%
+  mutate(hour = as.numeric(substring(building$timestamp,12,13)))
+
+
+building = building%>%
   mutate(time = ifelse(building$hour >= 5 & building$hour <= 11, "Morning",ifelse(building$hour > 11 & building$hour <= 16, "Afternoon",ifelse(building$hour > 16 & building$hour <= 20, "Evening", "Night"))))
   
 building$time = as.factor(building$time)
@@ -78,17 +81,62 @@ building_steam = building%>%
 
 
 
+#EDA, Cluster Analysis, any nonlinear pattern?
 
 #missing value
+colSums(is.na(building_electricity))
+
+#plot response variable
+building_electricity %>% ggplot(aes(meter_reading))+geom_histogram(aes(y=..density..), color="blue", fill="light blue")+
+  geom_density(color="red", size=1, fill="red", alpha=0.1)+theme_bw()
+
+#generate dataset with outlier removed, create high energy usage data which is preserved for high energy consumption analysis 
+summary(building_electricity$meter_reading)
+
+boxplot(building_electricity$meter_reading)
+
+outlier = boxplot(building_electricity$meter_reading)$out
+summary(outlier)
+
+remove = which(building_electricity$meter_reading %in% outlier)
 
 
+#dataset with outliers removed
+building_electricity_removeout = building_electricity[ -remove, ]
+
+summary(building_electricity_removeout$meter_reading)
 
 
-#EDA, Cluster Analysis, any nonlinear pattern?
+building_electricity_removeout %>% ggplot(aes(meter_reading))+geom_histogram(aes(y=..density..), color="blue", fill="light blue")+
+  geom_density(color="red", size=1, fill="red", alpha=0.1)+theme_bw()
+
+
+#high energy usage dataset, threshold is set as 3rd Qtr in outlier in original dataset
+building_electricity_high = building_electricity %>%
+  filter(building_electricity$meter_reading >= 1000)
+
+summary(building_electricity_high$meter_reading)
+
+building_electricity_high %>% ggplot(aes(meter_reading))+geom_histogram(aes(y=..density..), color="blue", fill="light blue")+
+  geom_density(color="red", size=1, fill="red", alpha=0.1)+theme_bw()
+
+outlier_inhigh = boxplot(building_electricity_high$meter_reading)$out
+
+building_electricity_high_remove = building_electricity_high[ -which(building_electricity_high$meter_reading %in% outlier_inhigh), ]
+
+summary(building_electricity_high_remove$meter_reading)
+
+building_electricity_high_remove %>% ggplot(aes(meter_reading))+geom_histogram(aes(y=..density..), color="blue", fill="light blue")+
+  geom_density(color="red", size=1, fill="red", alpha=0.1)+theme_bw()
 
 
 
 #transformation
+
+#response variable right skewed, log transformation
+
+
+
 
 
 
