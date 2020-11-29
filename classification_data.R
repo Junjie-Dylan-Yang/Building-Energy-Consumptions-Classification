@@ -316,23 +316,104 @@ weather%>%
 full_data <- tmp
 sum(is.na(full_data))
 
-data_cluster = full_data[-2]
+data_cluster = full_data%>%
+  filter(full_data$primary_use == 'Education')
 
-scale_data_cluster = scale(full_data)
+data_cluster = data_cluster[-340]
+
+data_cluster = data_cluster[-c(1,2,342)]
+
+scale_data_cluster = scale(data_cluster)
+
+set.seed(1) 
+km = kmeans(scale_data_cluster, 2, nstart=10)
+
+km$cluster
+
+total.wss = 0 
+for (i in 1:10) {
+  set.seed(1)
+  km = kmeans(scale_data_cluster,i,nstart=10)
+  total.wss[i] = km$tot.withinss
+}
+
+# total.wss now contains our total WSS across 10 different k-means models, ranging from 1 cluster to 10 clusters.
+plot(1:10,total.wss,ylab="Total WSS",xlab="Number of clusters",type="b",pch=20,col="blue")
+
+#pick 4 as the optimal
+set.seed(1)
+km2 = kmeans(scale_data_cluster,4,nstart=10)
+
+clust.data = cbind(cluster=km2$cluster,data_cluster)
+head(clust.data)
+
+agg_view = aggregate(.~cluster,data=clust.data,FUN=mean)
+
+avg_meter_reading = agg_view[,c(1:169)]
 
 
+df <- data.frame(t(avg_meter_reading[-1]))
+colnames(df) <- avg_meter_reading[, 1]
 
-scale.arrest = scale(USArrests)
-summary(scale.arrest)
+df<-tibble::rownames_to_column(df, "hour") 
 
-#------------------------------BUild LDA as base model-------------------------------------------------
+df = df%>%
+  mutate(hour = (substring(df$hour,39,40)))
+
+df = df%>%
+  group_by(df$hour)%>%
+  summarise_each(funs(mean))%>%
+  .[,-2]
+
+library(reshape2)  
+  
+newdf <- melt(df ,  id.vars = 'df$hour', variable.name = 'cluster') 
+
+newdf$`df$hour`=as.numeric(newdf$`df$hour`)
+
+ggplot(newdf, aes(`df$hour`, value)) + geom_line(aes(colour = cluster))
+
+#------------------------------BUild Logistic, LDA as base model-------------------------------------------------
+
+#Logistic on primary_use: education and other
 
 full_data <- tmp
-set.seed(1)
-train.index = sample(1:nrow(full_data),nrow(full_data)*0.8)
-train = full_data[train.index,]
-test = full_data[-train.index,]
+full_data_edu = full_data%>%
+  mutate(edu = ifelse(full_data$primary_use == 'Education',"Education", "Other"))
 
+full_data_edu$edu = as.factor(full_data_edu$edu)
+
+full_data_edu = full_data_edu[,-c(1:2)]
+full_data_edu = full_data_edu[-338]
+
+set.seed(1)
+train.index = sample(1:nrow(full_data_edu),nrow(full_data)*0.8)
+train = full_data_edu[train.index,]
+test = full_data_edu[-train.index,]
+
+model1 = glm(edu~.,data = train, family = binomial)
+
+summary(model1)
+
+pred.prob = predict(model1,test,type="response")
+pred.class = pred.prob
+
+pred.class[pred.prob>0.5] = "Edu"
+pred.class[!pred.prob>0.5] = "other"
+
+c.matrix = table(actual=test$edu,pred.class)
+c.matrix
+
+pred.class[1:10]
+
+sens.yes = c.matrix[1]/(c.matrix[1]+c.matrix[3])
+sens.yes
+prec.yes = c.matrix[1]/(c.matrix[1]+c.matrix[2])
+prec.yes
+acc=(c.matrix[4]+c.matrix[1])/(c.matrix[4]+c.matrix[3]+c.matrix[2]+c.matrix[1])
+acc
+
+#LDA
 
 library(MASS)
 lda.fit=lda(primary_use~.,data=train)
