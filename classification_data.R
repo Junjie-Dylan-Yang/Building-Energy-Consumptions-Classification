@@ -3,6 +3,7 @@ library(lubridate)
 library(imputeTS)
 library(here)
 library(caret)
+library(xgboost)
 
 
 building_metadata <- read_csv(here("data","filled_bldg_meta.csv"))
@@ -29,9 +30,9 @@ tmp <- building %>%
   left_join(building_metadata, by = 'building_id') %>% 
   select(-X1)
 
+full_data <- tmp
 
 #data frame for classification stored in full_data
-full_data <- tmp
 
 trctrl <- trainControl(method = "cv", number = 10, verboseIter = TRUE)
 
@@ -43,5 +44,23 @@ lda_fit <- train(primary_use ~., data = full_data, method = "lda",
 lda_fit
 
 
+#xgboost
 
+trctrl <- trainControl(method = "cv", number = 10, verboseIter = TRUE)
 
+grid_default <- expand.grid(
+  nrounds = 100,
+  max_depth = 6,
+  eta = 0.3,
+  gamma = 0,
+  colsample_bytree = 1,
+  min_child_weight = 1,
+  subsample = 1
+)
+
+xg_fit <- train(primary_use ~., data = full_data, method = "xgbTree",
+                 trControl=trctrl,
+                 tuneGrid = grid_default,
+                 verbose = TRUE)
+
+xg_fit
