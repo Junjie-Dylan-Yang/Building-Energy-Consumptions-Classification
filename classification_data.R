@@ -3,18 +3,272 @@ library(lubridate)
 library(imputeTS)
 library(here)
 library(caret)
+<<<<<<< HEAD
 library(xgboost)
+=======
+library(dplyr)
+>>>>>>> 8c0ae9a336ccac051b3165170c6a73ecded10fb2
 
 
-building_metadata <- read_csv(here("data","filled_bldg_meta.csv"))
-building_meter <- read_csv(here("data", "train.csv"))
-weather <- read_csv(here("data", "weather_train.csv"))
 
+#-------------------------------EDA, Feature Engineering------------------------------------------------
+#import datasets
+
+building_metadata = read.csv("C:/Users/we704/Desktop/building_metadata.csv")
+weather = read.csv("C:/Users/we704/Desktop/weather_train.csv")
+building_meter = read.csv("C:/Users/we704/Desktop/train.csv")
+
+str(building_metadata)
+summary(building_metadata)
+str(weather)
+summary(weather)
+str(building_meter)
+summary(building_meter)
+
+
+#merge building_metadata and building_meter dataset into completed one
+
+building <- building_meter %>%
+  left_join(building_metadata, by = 'building_id') %>%
+  mutate(site_id = as_factor(site_id))
+
+
+#expend timestamp into detail time variables
+
+building <- building %>% 
+  mutate(timestamp_date = ymd(gsub( " .*$", "", timestamp)),
+         timestamp_month = month(timestamp_date),
+         timestamp_day = wday(timestamp_date, label = T, abbr = T),
+         time_ymd_hms = ymd_hms(timestamp),
+         time_hour = hour(time_ymd_hms))
+
+
+#plot reponse variable
+
+building_electricity = building%>%
+  filter(building$meter == 0)
+
+building_electricity%>%
+  ggplot(aes(meter_reading))+geom_histogram(aes(y=..density..), color="blue", fill="light blue")+
+  geom_density(color="red", size=1, fill="red", alpha=0.1)+theme_bw()
+
+summary(building_electricity$meter_reading)
+
+
+#Huge dense with value 0, try to remove outliers given by boxplot
+
+outlier = boxplot(building_electricity$meter_reading)$out
+summary(outlier)
+
+remove = which(building_electricity$meter_reading %in% outlier)
+
+building_electricity_removeout = building_electricity[ -remove, ]
+
+summary(building_electricity_removeout$meter_reading)
+
+building_electricity_removeout %>% ggplot(aes(meter_reading))+geom_histogram(aes(y=..density..), color="blue", fill="light blue")+
+  geom_density(color="red", size=1, fill="red", alpha=0.1)+theme_bw()
+
+
+#transformation, right skewed, log transformation
+
+building_electricity_removeout = building_electricity_removeout %>%
+  mutate(meter_reading_log = log(building_electricity_removeout$meter_reading))
+
+building_electricity_removeout %>% ggplot(aes(meter_reading_log))+geom_histogram(aes(y=..density..), color="blue", fill="light blue")+
+  geom_density(color="red", size=1, fill="red", alpha=0.1)+theme_bw()
+
+
+#response variable right skewed, log(meter_reading+1) to avoid negative value
+
+building_electricity_removeout = building_electricity_removeout %>%
+  mutate(meter_reading_log = log(building_electricity_removeout$meter_reading+1))
+
+building_electricity_removeout %>% ggplot(aes(meter_reading_log))+geom_histogram(aes(y=..density..), color="blue", fill="light blue")+
+  geom_density(color="red", size=1, fill="red", alpha=0.1)+theme_bw()
+
+
+#Need to look closer to the dataset with meter_reading = 0
+
+building_electricity_zero = building_electricity %>%
+  filter(building_electricity$meter_reading== 0)
+
+summary(building_electricity_zero$site_id)
+
+#site 0 has the most 0 value in meter_reading, look into site 0 data
+
+building_electricity_site0 = building_electricity %>%
+  filter(building_electricity$site_id == 0)
+
+summary(building_electricity_site0)
+
+hist(building_electricity_site0$building_id)
+
+building_electricity_site0 = building_electricity_site0 %>% 
+  group_by(timestamp_date)%>% 
+  summarize(avg_meter_reading = mean(meter_reading))
+
+building_electricity_site0%>%
+  ggplot(aes(x=timestamp_date, y=avg_meter_reading))+geom_path()
+###The meter reading of site 0 buildings are mostly 0 until mid-May. It suggests us to remove site 0 data prior mid_may. 
+###However, our classification problem will look at series/path to distingush for building type and we will see the need of remove these data for better model performance.
+
+
+#Other variables statistics/plot
+
+## mean meter_reading by hour in a day
+
+building_electricity %>% 
+  group_by(time_hour)%>% 
+  summarize(avg_meter_reading = mean(meter_reading))%>%
+  ggplot(aes(x=time_hour, y=avg_meter_reading)) + geom_path()
+
+## mean meter_reading by day in a week
+
+building_electricity %>% 
+  group_by(timestamp_day)%>% 
+  summarize(avg_meter_reading = mean(meter_reading))%>%
+  ggplot(aes(x=timestamp_day, y=avg_meter_reading)) + geom_point()
+
+
+## mean meter_reading for days in a week of by building's use of purpose
+
+building %>% 
+  filter(meter == 0) %>%
+  mutate(day = wday(timestamp), hour = hour(timestamp)) %>%
+  group_by(primary_use, day, hour) %>% 
+  summarize(avg_meter_reading = mean(meter_reading)) %>%
+  mutate(date = ymd_h(paste0("2020-11-",day, " ", hour))) %>%
+  ggplot(aes(x=date, y=avg_meter_reading)) + 
+  geom_path() + facet_wrap(~primary_use)
+
+## focus on education
+
+building %>% 
+  filter(meter == 0, primary_use == "Education") %>%
+  mutate(day = wday(timestamp), hour = hour(timestamp), month = month(timestamp)) %>%
+  group_by(month, day, hour) %>% 
+  summarize(avg_meter_reading = mean(meter_reading)) %>%
+  mutate(date = ymd_h(paste0("2020-",month,"-",day, " ", hour))) %>%
+  ggplot(aes(x=date, y=avg_meter_reading)) + 
+  geom_path()
+
+## focus on Religious worship
+
+building %>% 
+  filter(meter == 0, primary_use == "Religious worship") %>%
+  mutate(day = wday(timestamp), hour = hour(timestamp)) %>%
+  group_by(primary_use, day, hour) %>% 
+  summarize(avg_meter_reading = mean(meter_reading)) %>%
+  mutate(date = ymd_h(paste0("2020-11-",day, " ", hour))) %>%
+  ggplot(aes(x=date, y=avg_meter_reading)) + 
+  geom_path() + facet_wrap(~primary_use)
+
+
+#-------------------------------------------------------------------------------
+
+
+#----------------------handle missing value---------------------------------------------------------
+
+colSums(is.na(building))
+colSums(is.na(weather))
+colSums(is.na(building_metadata))
+
+#handle missing data in building_metadata, variable year_built and floor_count
+tmp <- building %>% 
+  filter(meter == 0) %>%
+  mutate(day = wday(timestamp), hour = hour(timestamp)) %>%
+  group_by(building_id, day, hour) %>% 
+  summarize(avg_meter_reading = mean(meter_reading), .groups = "keep") %>%
+  ungroup() %>%
+  mutate(date = ymd_h(paste0("2020-11-",day, " ", hour))) %>%
+  select(-hour,-day) %>%
+  pivot_wider(names_from = date, values_from = avg_meter_reading) %>%
+  left_join(building_metadata, by = 'building_id')
+
+train_floor <- tmp %>% 
+  select(-primary_use, -building_id, -year_built) %>%
+  drop_na()
+
+test_floor <- tmp %>% 
+  select(-primary_use, -year_built) %>%
+  filter(is.na(floor_count))
+
+model_floor <- train(
+  floor_count ~., data = train_floor, method = "knn",
+  trControl = trainControl("cv", number = 10),
+  preProcess = c("center","scale"),
+  tuneGrid = expand.grid(k = c(9))
+)
+
+floor_est <- predict(model_floor, test_floor)
+test_floor$floor_count <- round(floor_est)
+
+tmp <- full_join(tmp, select(test_floor, building_id, floor_count), by = "building_id") %>%
+  mutate(floor_count = coalesce(floor_count.x, floor_count.y)) %>%
+  select(-floor_count.x, -floor_count.y)
+
+
+train_year <- tmp %>% 
+  select(-primary_use, -building_id, -floor_count) %>%
+  drop_na()
+
+test_year <- tmp %>% 
+  select(-primary_use, -floor_count) %>%
+  filter(is.na(year_built))
+
+model_year <- train(
+  year_built ~., data = train_year, method = "knn",
+  trControl = trainControl("cv", number = 10),
+  preProcess = c("center","scale"),
+  tuneGrid = expand.grid(k = 9)
+)
+
+
+year_est <- predict(model_year, test_year)
+test_year$year_built <- round(year_est)
+
+tmp <- full_join(tmp, select(test_year, building_id, year_built), by = "building_id") %>%
+  mutate(year_built = coalesce(year_built.x, year_built.y)) %>%
+  select(-year_built.x, -year_built.y)
+
+
+bldg_meta <- select(tmp, building_id, floor_count, primary_use, square_feet, year_built, site_id)
+
+#handle missing data in weather
+
+weather$air_temperature <- na_kalman(weather$air_temperature)
+weather$cloud_coverage <- na_kalman(weather$cloud_coverage)
+weather$dew_temperature <- na_kalman(weather$dew_temperature)
+weather$precip_depth_1_hr <- na_mean(weather$precip_depth_1_hr, option = "mode")
+weather$sea_level_pressure <- na_kalman(weather$sea_level_pressure)
+weather$wind_direction <- na_kalman(weather$wind_direction)
+weather$wind_speed <- na_kalman(weather$wind_speed)
+
+#-------------------------------------------------------------------------------
+
+
+
+
+#------------------------------Use data with NA handled and EDA on remaining variables-------------------------------------------------
+building_metadata <- read_csv("C:/Users/we704/Desktop/filled_bldg_meta.csv")
 
 
 building <- building_meter %>%
   left_join(building_metadata, by = 'building_id') %>%
   mutate(site_id = as_factor(site_id))
+
+building_electricity = building%>%
+  filter(building$meter == 0)
+
+#EDA on primary_use
+
+building_electricity %>% 
+  group_by(primary_use)%>% 
+  summarize(avg_meter_reading = mean(meter_reading))%>%
+  ggplot(aes(x=reorder(primary_use,avg_meter_reading), y=avg_meter_reading)) + geom_col()
+
+#Data transformation, each hour is a predictor
 
 tmp <- building %>% 
   filter(meter == 0) %>%
@@ -30,7 +284,151 @@ tmp <- building %>%
   left_join(building_metadata, by = 'building_id') %>% 
   select(-X1)
 
+<<<<<<< HEAD
 full_data <- tmp
+=======
+#EDA on floor
+
+tmp %>%
+  group_by(site_id)%>% 
+  summarize(avg_floor = mean(floor_count))%>%
+  ggplot(aes(x=reorder(site_id,avg_floor), y=avg_floor))+geom_col()
+
+#EDA on weather data
+
+summary(weather)
+
+weather%>%
+  group_by(site_id)%>%
+  summarize(avg_tem = mean(air_temperature))%>%
+  ggplot(aes(x=reorder(site_id,avg_tem), y=avg_tem))+geom_col()
+
+weather%>%
+  group_by(site_id)%>%
+  summarize(avg_cloud = mean(cloud_coverage))%>%
+  ggplot(aes(x=reorder(site_id,avg_cloud), y=avg_cloud))+geom_col()  
+
+weather%>%
+  group_by(site_id)%>%
+  summarize(avg_precip = mean(precip_depth_1_hr))%>%
+  ggplot(aes(x=reorder(site_id,avg_precip), y=avg_precip))+geom_col()
+
+weather%>%
+  group_by(site_id)%>%
+  summarize(avg_wind = mean(wind_speed))%>%
+  ggplot(aes(x=reorder(site_id,avg_wind), y=avg_wind))+geom_col()
+
+
+#------------------------------Cluster Analysis-------------------------------------------------
+full_data <- tmp
+sum(is.na(full_data))
+
+data_cluster = full_data%>%
+  filter(full_data$primary_use == 'Education')
+
+data_cluster = data_cluster[-340]
+
+data_cluster = data_cluster[-c(1,2,342)]
+
+scale_data_cluster = scale(data_cluster)
+
+set.seed(1) 
+km = kmeans(scale_data_cluster, 2, nstart=10)
+
+km$cluster
+
+total.wss = 0 
+for (i in 1:10) {
+  set.seed(1)
+  km = kmeans(scale_data_cluster,i,nstart=10)
+  total.wss[i] = km$tot.withinss
+}
+
+# total.wss now contains our total WSS across 10 different k-means models, ranging from 1 cluster to 10 clusters.
+plot(1:10,total.wss,ylab="Total WSS",xlab="Number of clusters",type="b",pch=20,col="blue")
+
+#pick 4 as the optimal
+set.seed(1)
+km2 = kmeans(scale_data_cluster,4,nstart=10)
+
+clust.data = cbind(cluster=km2$cluster,data_cluster)
+head(clust.data)
+
+agg_view = aggregate(.~cluster,data=clust.data,FUN=mean)
+
+avg_meter_reading = agg_view[,c(1:169)]
+
+
+df <- data.frame(t(avg_meter_reading[-1]))
+colnames(df) <- avg_meter_reading[, 1]
+
+df<-tibble::rownames_to_column(df, "hour") 
+
+df = df%>%
+  mutate(hour = (substring(df$hour,39,40)))
+
+df = df%>%
+  group_by(df$hour)%>%
+  summarise_each(funs(mean))%>%
+  .[,-2]
+
+library(reshape2)  
+  
+newdf <- melt(df ,  id.vars = 'df$hour', variable.name = 'cluster') 
+
+newdf$`df$hour`=as.numeric(newdf$`df$hour`)
+
+ggplot(newdf, aes(`df$hour`, value)) + geom_line(aes(colour = cluster))
+
+#------------------------------BUild Logistic, LDA as base model-------------------------------------------------
+
+#Logistic on primary_use: education and other
+
+full_data <- tmp
+full_data_edu = full_data%>%
+  mutate(edu = ifelse(full_data$primary_use == 'Education',"Education", "Other"))
+
+full_data_edu$edu = as.factor(full_data_edu$edu)
+
+full_data_edu = full_data_edu[,-c(1:2)]
+full_data_edu = full_data_edu[-338]
+
+set.seed(1)
+train.index = sample(1:nrow(full_data_edu),nrow(full_data)*0.8)
+train = full_data_edu[train.index,]
+test = full_data_edu[-train.index,]
+
+model1 = glm(edu~.,data = train, family = binomial)
+
+summary(model1)
+
+pred.prob = predict(model1,test,type="response")
+pred.class = pred.prob
+
+pred.class[pred.prob>0.5] = "Edu"
+pred.class[!pred.prob>0.5] = "other"
+
+c.matrix = table(actual=test$edu,pred.class)
+c.matrix
+
+pred.class[1:10]
+
+sens.yes = c.matrix[1]/(c.matrix[1]+c.matrix[3])
+sens.yes
+prec.yes = c.matrix[1]/(c.matrix[1]+c.matrix[2])
+prec.yes
+acc=(c.matrix[4]+c.matrix[1])/(c.matrix[4]+c.matrix[3]+c.matrix[2]+c.matrix[1])
+acc
+
+#LDA
+
+library(MASS)
+lda.fit=lda(primary_use~.,data=train)
+lda.fit
+
+
+
+>>>>>>> 8c0ae9a336ccac051b3165170c6a73ecded10fb2
 
 #data frame for classification stored in full_data
 
@@ -38,14 +436,15 @@ trctrl <- trainControl(method = "cv", number = 10, verboseIter = TRUE)
 
 
 lda_fit <- train(primary_use ~., data = full_data, method = "lda",
-                trControl=trctrl,
-                verbose = TRUE)
+                 trControl=trctrl,
+                 verbose = TRUE)
 
 lda_fit
 
 
 #xgboost
 
+<<<<<<< HEAD
 trctrl <- trainControl(method = "cv", number = 10, verboseIter = TRUE)
 
 grid_default <- expand.grid(
@@ -64,3 +463,5 @@ xg_fit <- train(primary_use ~., data = full_data, method = "xgbTree",
                  verbose = TRUE)
 
 xg_fit
+=======
+>>>>>>> 8c0ae9a336ccac051b3165170c6a73ecded10fb2
