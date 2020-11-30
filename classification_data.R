@@ -428,7 +428,6 @@ lda.fit
 
 
 
->>>>>>> 8c0ae9a336ccac051b3165170c6a73ecded10fb2
 
 #data frame for classification stored in full_data
 
@@ -444,7 +443,6 @@ lda_fit
 
 #xgboost
 
-<<<<<<< HEAD
 trctrl <- trainControl(method = "cv", number = 10, verboseIter = TRUE)
 
 grid_default <- expand.grid(
@@ -463,5 +461,4 @@ xg_fit <- train(primary_use ~., data = full_data, method = "xgbTree",
                  verbose = TRUE)
 
 xg_fit
-=======
->>>>>>> 8c0ae9a336ccac051b3165170c6a73ecded10fb2
+
