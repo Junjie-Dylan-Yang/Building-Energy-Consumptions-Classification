@@ -3,11 +3,7 @@ library(lubridate)
 library(imputeTS)
 library(here)
 library(caret)
-<<<<<<< HEAD
-library(xgboost)
-=======
 library(dplyr)
->>>>>>> 8c0ae9a336ccac051b3165170c6a73ecded10fb2
 
 
 
@@ -284,9 +280,6 @@ tmp <- building %>%
   left_join(building_metadata, by = 'building_id') %>% 
   select(-X1)
 
-<<<<<<< HEAD
-full_data <- tmp
-=======
 #EDA on floor
 
 tmp %>%
@@ -320,6 +313,7 @@ weather%>%
 
 
 #------------------------------Cluster Analysis-------------------------------------------------
+
 full_data <- tmp
 sum(is.na(full_data))
 
@@ -330,7 +324,15 @@ data_cluster = data_cluster[-340]
 
 data_cluster = data_cluster[-c(1,2,342)]
 
-scale_data_cluster = scale(data_cluster)
+data_cluster_flip = as.matrix(data_cluster)
+
+data_cluster_flip = t(data_cluster_flip)
+
+scale_data_cluster_flip = scale(data_cluster_flip)
+
+scale_data_cluster = t(scale_data_cluster_flip)
+
+#scale_data_cluster = scale(data_cluster)
 
 set.seed(1) 
 km = kmeans(scale_data_cluster, 2, nstart=10)
@@ -350,9 +352,15 @@ plot(1:10,total.wss,ylab="Total WSS",xlab="Number of clusters",type="b",pch=20,c
 #pick 4 as the optimal
 set.seed(1)
 km2 = kmeans(scale_data_cluster,4,nstart=10)
+km2$cluster
 
-clust.data = cbind(cluster=km2$cluster,data_cluster)
+scale_data_cluster = as.data.frame(scale_data_cluster)
+
+clust.data = cbind(cluster=km2$cluster,scale_data_cluster)
 head(clust.data)
+
+
+
 
 agg_view = aggregate(.~cluster,data=clust.data,FUN=mean)
 
@@ -430,6 +438,7 @@ lda.fit
 
 
 #data frame for classification stored in full_data
+full_data <- tmp
 
 trctrl <- trainControl(method = "cv", number = 10, verboseIter = TRUE)
 
@@ -441,24 +450,4 @@ lda_fit <- train(primary_use ~., data = full_data, method = "lda",
 lda_fit
 
 
-#xgboost
-
-trctrl <- trainControl(method = "cv", number = 10, verboseIter = TRUE)
-
-grid_default <- expand.grid(
-  nrounds = 100,
-  max_depth = 6,
-  eta = 0.3,
-  gamma = 0,
-  colsample_bytree = 1,
-  min_child_weight = 1,
-  subsample = 1
-)
-
-xg_fit <- train(primary_use ~., data = full_data, method = "xgbTree",
-                 trControl=trctrl,
-                 tuneGrid = grid_default,
-                 verbose = TRUE)
-
-xg_fit
 
